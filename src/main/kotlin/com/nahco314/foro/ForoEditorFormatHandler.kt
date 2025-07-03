@@ -52,7 +52,7 @@ class ForoEditorFormatHandler(val project: Project) {
         val args = FormatArgs(
             Path.of(path),
             psiFile.text,
-            Path.of(project.basePath ?: parent),
+            Path.of(parent),
             Path.of(foroSettings.state.foroExecutablePath!!),
             Path.of(foroSettings.state.configFile!!),
             Path.of(foroSettings.state.cacheDir!!),
@@ -90,16 +90,26 @@ class ForoEditorFormatHandler(val project: Project) {
             is FormatResult.Error -> return
         }
 
-        runInEdt {
-            runWriteAction {
-                commandProcessor.executeCommand(project, {
-                    if (undoManager.isUndoInProgress) {
-                        return@executeCommand
-                    }
+        // Don't create undo entry if content hasn't changed
+        if (result.formattedContent == document.text) {
+            return
+        }
 
-                    document.setText(result.formattedContent)
-                }, "Foro Format", "Foro Format")
-            }
+        runInEdt {
+            commandProcessor.executeCommand(
+                project,
+                {
+                    runWriteAction {
+                        if (undoManager.isUndoInProgress) {
+                            return@runWriteAction
+                        }
+
+                        document.setText(result.formattedContent)
+                    }
+                },
+                "Foro Format",
+                "Foro" // Group ID for command merging
+            )
         }
 
         val end = System.currentTimeMillis()

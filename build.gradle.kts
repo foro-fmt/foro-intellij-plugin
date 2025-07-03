@@ -19,6 +19,7 @@ dependencies {
         instrumentationTools()
         pluginVerifier()
     }
+    implementation(kotlin("stdlib-jdk8"))
 }
 
 group = "com.nahco314"
@@ -48,8 +49,6 @@ intellijPlatform {
 tasks {
     // Set the JVM compatibility versions
     withType<JavaCompile> {
-        sourceCompatibility = "17"
-        targetCompatibility = "17"
     }
     withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
         kotlinOptions.jvmTarget = "17"
@@ -68,4 +67,7 @@ tasks {
     publishPlugin {
         token.set(System.getenv("PUBLISH_TOKEN"))
     }
+}
+kotlin {
+    jvmToolchain(17)
 }
