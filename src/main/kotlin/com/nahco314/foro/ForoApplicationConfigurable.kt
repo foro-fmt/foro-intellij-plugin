@@ -13,7 +13,6 @@ import java.nio.file.Path
 
 class ForoApplicationConfigurable : Configurable {
     var state: ForoSettings = ForoSettings.getInstance().state
-    // var fileChooser = FileChooser.chooseFile(FileChooserDescriptorFactory.createSingleFolderDescriptor(), null, null)
     var panel = panel {
         group {
             row {

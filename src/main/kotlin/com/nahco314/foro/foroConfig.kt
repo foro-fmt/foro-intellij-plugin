@@ -20,11 +20,6 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.nio.file.Path
 
-//val FORO_COMMAND = when {
-//    SystemInfo.isWindows -> "foro.exe"
-//    else -> "foro"
-//}
-
 val FORO_COMMAND = "foro"
 
 class ForoConfigException(message: String): Exception(message)

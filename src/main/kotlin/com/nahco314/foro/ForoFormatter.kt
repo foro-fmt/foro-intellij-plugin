@@ -1,23 +1,18 @@
 package com.nahco314.foro
 
-import io.ktor.utils.io.charsets.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import java.io.ByteArrayOutputStream
 import java.net.StandardProtocolFamily
 import java.net.UnixDomainSocketAddress
 import java.nio.ByteBuffer
-import java.nio.CharBuffer
 import java.nio.channels.SocketChannel
-import java.nio.charset.CharsetDecoder
-import java.nio.charset.CoderResult
-import java.nio.charset.CodingErrorAction
 import java.nio.file.Path
-import java.util.*
 import kotlin.text.Charsets
-import kotlin.time.TimeSource
 
 class ForoUnexpectedErrorException(message: String): Exception(message)
 
@@ -30,9 +25,9 @@ sealed class FormatResult {
 
 class ForoFormatter {
     private fun parseInfo(infoStr: String): Pair<Int, Long>? {
-        val parts = infoStr.split(',')
+        val parts = infoStr.trim().split(',')
 
-        if (parts.size != 2) {
+        if (parts.size < 2) {
             return null
         }
 
@@ -68,10 +63,15 @@ class ForoFormatter {
         return realStartTime == startTime
     }
 
-    fun start(foroExecutable: Path) {
-        val parts = arrayOf(foroExecutable.toString(), "daemon", "start")
-        val proc = ProcessBuilder(*parts)
-            .start()
+    fun start(foroExecutable: Path, configFile: Path, cacheDir: Path, socketDir: Path) {
+        val parts = listOf(
+            foroExecutable.toString(),
+            "--config-file", configFile.toString(),
+            "--cache-dir", cacheDir.toString(),
+            "--socket-dir", socketDir.toString(),
+            "daemon", "start"
+        )
+        val proc = ProcessBuilder(parts).start()
         proc.waitFor()
 
         if (proc.exitValue() != 0) {
@@ -79,63 +79,37 @@ class ForoFormatter {
         }
     }
 
-    private fun escape(raw: String): String {
-        var escaped = raw
-        escaped = escaped.replace("\\", "\\\\")
-        escaped = escaped.replace("\"", "\\\"")
-        escaped = escaped.replace("\b", "\\b")
-        escaped = escaped.replace("\u000c", "\\f")
-        escaped = escaped.replace("\n", "\\n")
-        escaped = escaped.replace("\r", "\\r")
-        escaped = escaped.replace("\t", "\\t")
-        // TODO: escape other non-printing characters using uXXXX notation
-        return escaped
-    }
-
     private fun formatInner(args: FormatArgs): FormatResult {
-                val start = TimeSource.Monotonic.markNow()
-
-        val commandJsonString = """
-            {
-                "command": {
-                    "PureFormat": {
-                        "path": "${args.targetPath}",
-                        "content": "${escape(args.targetContent)}"
-                    }
-                },
-                "current_dir": "${args.currentDir}",
-                "global_options": {
-                    "config_file": "${args.configFile}",
-                    "cache_dir": "${args.cacheDir}",
-                    "socket_dir": "${args.socketDir}",
-                    "no_cache": false,
-                    "no_long_log": false
-                }
-            }
-        """
-
-        println("Foro: 0.0 ${start.elapsedNow().inWholeMicroseconds}µs")
+        val commandJson = buildJsonObject {
+            put("command", buildJsonObject {
+                put("PureFormat", buildJsonObject {
+                    put("path", args.targetPath.toString())
+                    put("content", args.targetContent)
+                })
+            })
+            put("current_dir", args.currentDir.toString())
+            put("global_options", buildJsonObject {
+                put("config_file", args.configFile.toString())
+                put("cache_dir", args.cacheDir.toString())
+                put("socket_dir", args.socketDir.toString())
+                put("no_cache", false)
+                put("long_log", false)
+                put("ignore_build_id_mismatch", false)
+            })
+        }
+        val commandJsonString = Json.encodeToString(JsonObject.serializer(), commandJson)
 
         val socketPath = args.socketDir.resolve("daemon-cmd.sock")
-        println("Foro: 0.1 ${start.elapsedNow().inWholeMicroseconds}µs")
-
         val address = UnixDomainSocketAddress.of(socketPath)
-        println("Foro: 0.2 ${start.elapsedNow().inWholeMicroseconds}µs")
 
         val result: FormatResult
 
         SocketChannel.open(StandardProtocolFamily.UNIX).use { sc ->
-        println("Foro: 0 ${start.elapsedNow().inWholeMicroseconds}µs")
-
             sc.connect(address)
-
-        println("Foro: 1 ${start.elapsedNow().inWholeMicroseconds}µs")
 
             val byteBuffer = ByteBuffer.wrap(commandJsonString.toByteArray())
             sc.write(byteBuffer)
             sc.shutdownOutput()
-
-        println("Foro: 2 ${start.elapsedNow().inWholeMicroseconds}µs")
 
             val outputBuffer = ByteArrayOutputStream()
             val readBuffer = ByteBuffer.allocate(4096)
@@ -149,33 +123,22 @@ class ForoFormatter {
                 outputBuffer.write(readBuffer.array(), 0, bytesRead)
             }
 
-            // まとめて UTF-8 文字列に変換
             val response = outputBuffer.toByteArray().toString(Charsets.UTF_8)
-
-            // println(response)
             val responseJson = Json.decodeFromString<JsonObject>(response)
             val content = responseJson["PureFormat"]!!.jsonObject
-            if (content.containsKey("Success")) {
-                result = FormatResult.Success(content["Success"]!!.jsonPrimitive.content)
-            } else if (content.containsKey("Ignored")) {
-                result = FormatResult.Ignored
-            } else {
-                result = FormatResult.Error(content["Error"]!!.jsonPrimitive.toString())
+            result = when {
+                content.containsKey("Success") -> FormatResult.Success(content["Success"]!!.jsonPrimitive.content)
+                content.containsKey("Ignored") -> FormatResult.Ignored
+                else -> FormatResult.Error(content["Error"]!!.jsonPrimitive.toString())
             }
-
-        println("Foro: 5 ${start.elapsedNow().inWholeMicroseconds}µs")
-
         }
-
-        println("Foro: 6 ${start.elapsedNow().inWholeMicroseconds}µs")
-
 
         return result
     }
 
     fun format(args: FormatArgs): FormatResult {
         if (!daemonIsAlive(args.socketDir)) {
-            start(args.foroExecutable)
+            start(args.foroExecutable, args.configFile, args.cacheDir, args.socketDir)
         }
 
         return formatInner(args)

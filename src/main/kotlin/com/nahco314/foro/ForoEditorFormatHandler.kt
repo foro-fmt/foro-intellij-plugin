@@ -22,10 +22,6 @@ class ForoEditorFormatHandler(val project: Project) {
     private val commandProcessor: CommandProcessor = CommandProcessor.getInstance()
 
     fun format(document: Document, isAutoSave: Boolean) {
-        val start = System.currentTimeMillis()
-
-        println("Foro: Formatting $isAutoSave")
-
         if (!foroSettings.state.enabled) {
             return
         }
@@ -44,6 +40,19 @@ class ForoEditorFormatHandler(val project: Project) {
             return
         }
 
+        val foroExecutable = foroSettings.state.foroExecutablePath
+        val configFile = foroSettings.state.configFile
+        val cacheDir = foroSettings.state.cacheDir
+        val socketDir = foroSettings.state.socketDir
+
+        if (foroExecutable == null || configFile == null || cacheDir == null || socketDir == null) {
+            Notifications.Bus.notify(
+                Notification("Foro", "Foro not configured", "Please open Settings → Foro and click Apply.", NotificationType.WARNING),
+                project
+            )
+            return
+        }
+
         val formatter = ForoFormatter()
 
         val path = psiFile.virtualFile.path
@@ -53,17 +62,16 @@ class ForoEditorFormatHandler(val project: Project) {
             Path.of(path),
             psiFile.text,
             Path.of(parent),
-            Path.of(foroSettings.state.foroExecutablePath!!),
-            Path.of(foroSettings.state.configFile!!),
-            Path.of(foroSettings.state.cacheDir!!),
-            Path.of(foroSettings.state.socketDir!!)
+            Path.of(foroExecutable),
+            Path.of(configFile),
+            Path.of(cacheDir),
+            Path.of(socketDir)
         )
 
         val result: FormatResult
 
         try {
             result = formatter.format(args)
-        println("Foro: aaa ${System.currentTimeMillis() - start}ms")
         } catch (e: ForoUnexpectedErrorException) {
             val notification = Notification(
                 "Foro",
@@ -78,9 +86,6 @@ class ForoEditorFormatHandler(val project: Project) {
             })
 
             Notifications.Bus.notify(notification, project)
-
-            foroSettings.state.formatOnAutoSave = false
-
             return
         }
 
@@ -111,8 +116,5 @@ class ForoEditorFormatHandler(val project: Project) {
                 "Foro" // Group ID for command merging
             )
         }
-
-        val end = System.currentTimeMillis()
-        println("Foro: Formatted in ${end - start}ms")
     }
 }

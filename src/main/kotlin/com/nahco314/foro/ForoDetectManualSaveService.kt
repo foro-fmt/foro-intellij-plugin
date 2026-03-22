@@ -4,6 +4,7 @@ import com.intellij.openapi.components.Service
 
 @Service
 class ForoDetectManualSaveService {
+    @Volatile
     private var isSavingManually: Boolean = false
 
     fun setSavingManually(isSavingManually: Boolean) {
