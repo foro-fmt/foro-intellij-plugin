@@ -137,10 +137,10 @@ class ForoFormatter {
     }
 
     fun format(args: FormatArgs): FormatResult {
-        if (!daemonIsAlive(args.socketDir)) {
-            start(args.foroExecutable, args.configFile, args.cacheDir, args.socketDir)
+        return try {
+            formatInner(args)
+        } catch (e: java.io.IOException) {
+            throw ForoUnexpectedErrorException("Failed to communicate with foro daemon: ${e.message}")
         }
-
-        return formatInner(args)
     }
 }

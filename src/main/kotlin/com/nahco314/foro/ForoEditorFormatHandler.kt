@@ -5,6 +5,7 @@ import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
 import com.intellij.notification.Notifications
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.runInEdt
 import com.intellij.openapi.application.runWriteAction
 import com.intellij.openapi.command.CommandProcessor
@@ -53,7 +54,38 @@ class ForoEditorFormatHandler(val project: Project) {
             return
         }
 
+        val foroExecutablePath = Path.of(foroExecutable)
+        val configFilePath = Path.of(configFile)
+        val cacheDirPath = Path.of(cacheDir)
+        val socketDirPath = Path.of(socketDir)
+
         val formatter = ForoFormatter()
+
+        // If daemon is not running, start it in background and skip this format.
+        // The next save will find the daemon ready.
+        if (!formatter.daemonIsAlive(socketDirPath)) {
+            ApplicationManager.getApplication().executeOnPooledThread {
+                try {
+                    formatter.start(foroExecutablePath, configFilePath, cacheDirPath, socketDirPath)
+                } catch (e: ForoUnexpectedErrorException) {
+                    runInEdt {
+                        val notification = Notification(
+                            "Foro",
+                            "Foro error",
+                            "Failed to start foro daemon: ${e.message}",
+                            NotificationType.ERROR
+                        )
+                        notification.addAction(object : NotificationAction("Open settings") {
+                            override fun actionPerformed(e: AnActionEvent, notification: Notification) {
+                                ShowSettingsUtil.getInstance().showSettingsDialog(e.project, ForoApplicationConfigurable::class.java)
+                            }
+                        })
+                        Notifications.Bus.notify(notification, project)
+                    }
+                }
+            }
+            return
+        }
 
         val path = psiFile.virtualFile.path
         val parent = psiFile.virtualFile.parent.path
@@ -62,10 +94,10 @@ class ForoEditorFormatHandler(val project: Project) {
             Path.of(path),
             psiFile.text,
             Path.of(parent),
-            Path.of(foroExecutable),
-            Path.of(configFile),
-            Path.of(cacheDir),
-            Path.of(socketDir)
+            foroExecutablePath,
+            configFilePath,
+            cacheDirPath,
+            socketDirPath
         )
 
         val result: FormatResult
