@@ -1,6 +1,17 @@
 import org.jetbrains.intellij.platform.gradle.extensions.intellijPlatform
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.models.ProductRelease
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.tasks.BuildPluginTask
+
+val integrationTestSourceSet = sourceSets.create("integrationTest") {
+    compileClasspath += sourceSets.main.get().output
+    runtimeClasspath += sourceSets.main.get().output
+}
+
+val integrationTestImplementation by configurations.getting {
+    extendsFrom(configurations.testImplementation.get())
+}
 
 plugins {
     id("java")
@@ -18,8 +29,12 @@ dependencies {
 
         instrumentationTools()
         pluginVerifier()
+        testFramework(TestFrameworkType.Starter, configurationName = "integrationTestImplementation")
     }
     implementation(kotlin("stdlib-jdk8"))
+    integrationTestImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+    integrationTestImplementation("org.kodein.di:kodein-di-jvm:7.20.2")
+    integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.1")
 }
 
 group = "com.nahco314"
@@ -43,6 +58,16 @@ intellijPlatform {
                 ide(IntelliJPlatformType.IntellijIdeaUltimate, "2024.3.5")
             }
         }
+    }
+}
+
+val integrationTest by intellijPlatformTesting.testIdeUi.registering {
+    task {
+        archiveFile.set(tasks.named<BuildPluginTask>("buildPlugin").flatMap { it.archiveFile })
+        testClassesDirs = integrationTestSourceSet.output.classesDirs
+        classpath = integrationTestSourceSet.runtimeClasspath
+        useJUnitPlatform()
+        shouldRunAfter(tasks.test)
     }
 }
 

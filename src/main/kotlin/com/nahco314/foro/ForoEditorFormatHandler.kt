@@ -6,6 +6,7 @@ import com.intellij.notification.NotificationType
 import com.intellij.notification.Notifications
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.service
 import com.intellij.openapi.application.runInEdt
 import com.intellij.openapi.application.runWriteAction
 import com.intellij.openapi.command.CommandProcessor
@@ -21,6 +22,7 @@ class ForoEditorFormatHandler(val project: Project) {
     private val psiDocumentManager: PsiDocumentManager = PsiDocumentManager.getInstance(project)
     private val foroSettings: ForoSettings = ForoSettings.getInstance()
     private val commandProcessor: CommandProcessor = CommandProcessor.getInstance()
+    private val e2eTelemetryService: ForoE2ETelemetryService = service()
 
     fun format(document: Document, isAutoSave: Boolean) {
         if (!foroSettings.state.enabled) {
@@ -92,7 +94,7 @@ class ForoEditorFormatHandler(val project: Project) {
 
         val args = FormatArgs(
             Path.of(path),
-            psiFile.text,
+            document.text,
             Path.of(parent),
             foroExecutablePath,
             configFilePath,
@@ -142,6 +144,7 @@ class ForoEditorFormatHandler(val project: Project) {
                         }
 
                         document.setText(result.formattedContent)
+                        e2eTelemetryService.recordFormatApplied(path, result.formattedContent)
                     }
                 },
                 "Foro Format",
